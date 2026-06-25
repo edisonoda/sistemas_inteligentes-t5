@@ -51,13 +51,9 @@ class AbstAgent(ABC):
 
             # Read each line of the file
             for line in file:
-                # Split the line into words
                 words = line.split()
-
-                if words is None:
+                if not words:
                     continue
-
-                # Get the keyword and value
                 keyword = words[0]
                 if keyword == "NAME":
                     self.NAME = words[1]
