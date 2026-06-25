@@ -334,7 +334,7 @@ class Rescuer(AbstAgent):
                     centroids[label] = (cx, cy)
                 
                 # Limite maximo de distancia em celulas de grid (ex: 20 celulas)
-                MAX_CLUSTER_DIST = 20.0
+                MAX_CLUSTER_DIST = 30.0
                 
                 for vid in outliers:
                     ox, oy = self.victims[vid][0]
@@ -368,24 +368,28 @@ class Rescuer(AbstAgent):
                 cx = np.mean([c[0] for c in coords_list])
                 cy = np.mean([c[1] for c in coords_list])
                 
-                # Soma das probabilidades de sobrevivencia (sobr_pred no indice 14)
-                sum_sobr = np.sum([self.victims[vid][1][14] for vid in vids])
+                # Sobrevivencia media do cluster (sobr_pred no indice 14) e quantidade de vitimas
+                mean_sobr = np.mean([self.victims[vid][1][14] for vid in vids])
+                num_victims = len(vids)
                 
                 # Distancia ate a base (0, 0)
                 dist_base = math.sqrt(cx**2 + cy**2)
                 
-                # Utilidade = soma_sobr / (dist_base + 1.0)
-                utility = sum_sobr / (dist_base + 1.0)
+                # Utilidade = (num_victims * mean_sobr) / (dist_base + 1.0)
+                utility = (num_victims * mean_sobr) / (dist_base + 1.0)
                 
                 cluster_info.append({
                     'vids': vids,
                     'centroid': (cx, cy),
-                    'sum_sobr': sum_sobr,
+                    'mean_sobr': mean_sobr,
                     'utility': utility
                 })
                 
             # 2. Ordena os clusters por utilidade decrescente
             cluster_info.sort(key=lambda x: x['utility'], reverse=True)
+            
+            # Gera o gráfico de utilidades
+            self.plot_utilities(cluster_info)
             
             # 3. Distribuição Gulosa e Inteligente entre os socorristas
             assignments = { 'SOC_1': [], 'SOC_2': [], 'SOC_3': [] }
@@ -442,6 +446,77 @@ class Rescuer(AbstAgent):
             self.rescuers[i].victims = self.victims
             agent_name = self.rescuers[i].NAME
             self.rescuers[i].do_rescue(self.map, assignments.get(agent_name, []))
+
+    def plot_utilities(self, cluster_info):
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            
+            plt.figure(figsize=(10, 8))
+            
+            # Plota a base (0, 0) como referência
+            plt.scatter(0, 0, color='red', marker='*', s=250, zorder=5, label='Base (0,0)')
+            
+            cx_coords = [info['centroid'][0] for info in cluster_info]
+            cy_coords = [info['centroid'][1] for info in cluster_info]
+            utilities = [info['utility'] for info in cluster_info]
+            vids_counts = [len(info['vids']) for info in cluster_info]
+            
+            # Escala do tamanho dos pontos baseada no número de vítimas (mínimo 100)
+            sizes = [max(100, count * 50) for count in vids_counts]
+            
+            # Scatter plot dos clusters com cores baseadas na utilidade
+            sc = plt.scatter(cx_coords, cy_coords, c=utilities, cmap='viridis', s=sizes, 
+                             alpha=0.85, edgecolors='black', linewidths=1.5, zorder=4, label='Clusters')
+            
+            # Adiciona barra de cores (Colorbar) para indicar utilidade
+            cbar = plt.colorbar(sc)
+            cbar.set_label('Valor de Utilidade', fontsize=11, fontweight='bold')
+            
+            # Annotations para cada cluster
+            for i, info in enumerate(cluster_info):
+                cid = i + 1
+                cx, cy = info['centroid']
+                ut = info['utility']
+                num_v = len(info['vids'])
+                
+                # Texto de anotação
+                label = f"C{cid}\nUt: {ut:.2f}\nVít: {num_v}"
+                
+                # Coloca a anotação ligeiramente acima ou ao lado
+                plt.annotate(label, 
+                             xy=(cx, cy), 
+                             xytext=(10, 10), 
+                             textcoords='offset points',
+                             fontsize=9,
+                             fontweight='bold',
+                             bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.6, ec="black", lw=0.8),
+                             zorder=5)
+            
+            plt.title('Posição Geográfica e Utilidade dos Clusters Clínicos', fontsize=14, fontweight='bold', pad=15)
+            plt.xlabel('Eixo X (Relativo)', fontsize=12)
+            plt.ylabel('Eixo Y (Relativo)', fontsize=12)
+            
+            plt.grid(True, linestyle='--', alpha=0.5, zorder=1)
+            plt.legend(loc='upper left', frameon=True, facecolor='white', edgecolor='gray')
+            
+            # Ajusta os limites para garantir que a base e todos os clusters fiquem visíveis com folga
+            all_x = [0] + cx_coords
+            all_y = [0] + cy_coords
+            margin_x = (max(all_x) - min(all_x)) * 0.15 if len(all_x) > 1 else 5
+            margin_y = (max(all_y) - min(all_y)) * 0.15 if len(all_y) > 1 else 5
+            if margin_x == 0: margin_x = 5
+            if margin_y == 0: margin_y = 5
+            plt.xlim(min(all_x) - margin_x, max(all_x) + margin_x)
+            plt.ylim(min(all_y) - margin_y, max(all_y) + margin_y)
+            
+            t05_dir = os.path.dirname(self.config_folder)
+            plot_path = os.path.join(t05_dir, "utilities_plot.png")
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"{self.NAME}: Gráfico geográfico de utilidades salvo em {plot_path}")
+        except Exception as e:
+            print(f"{self.NAME}: Erro ao gerar gráfico de utilidades: {e}")
 
     def deliberate(self) -> bool:
         if self.plan == []:
