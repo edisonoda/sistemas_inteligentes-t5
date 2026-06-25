@@ -5,8 +5,8 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from vs.environment import Env
-from explorer import Explorer
-from rescuer import Rescuer
+from exp import Explorer
+from soc import Rescuer
 
 def main(vict_folder, env_folder, config_ag_folder):
     env = Env(vict_folder, env_folder)
