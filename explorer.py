@@ -59,22 +59,23 @@ class Explorer(AbstAgent):
             curr_x, curr_y = nx, ny
         return cost
 
-    def explore(self):
+    def get_next_position(self):
         # DFS Online: tenta encontrar o primeiro vizinho valido nao visitado globalmente
         obstacles = self.check_walls_and_lim()
-        next_dir = None
-        
         # Testa vizinhos na ordem horaria (0 a 7)
         for direction in range(8):
             if obstacles[direction] == VS.CLEAR:
                 dx, dy = Explorer.AC_INCR[direction]
                 nx, ny = self.x + dx, self.y + dy
                 if (nx, ny) not in Explorer.visited_global:
-                    next_dir = direction
-                    break
+                    return dx, dy
+        return None
+
+    def explore(self):
+        next_move = self.get_next_position()
         
-        if next_dir is not None:
-            dx, dy = Explorer.AC_INCR[next_dir]
+        if next_move is not None:
+            dx, dy = next_move
             nx, ny = self.x + dx, self.y + dy
             
             # Verifica se ha bateria suficiente para ir e depois voltar
@@ -106,7 +107,7 @@ class Explorer(AbstAgent):
                         if vs and vs != VS.TIME_EXCEEDED:
                             # Preve tri e sobr usando os modelos carregados
                             cols = ['idade', 'fc', 'fr', 'pas', 'spo2', 'temp', 'pr', 'sg', 'fx', 'queim']
-                            features = pd.DataFrame([vs[:10]], columns=cols)
+                            features = pd.DataFrame([vs[1:11]], columns=cols)
                             tri_pred = int(self.classificador.predict(features)[0])
                             sobr_pred = float(self.regressor.predict(features)[0])
                             

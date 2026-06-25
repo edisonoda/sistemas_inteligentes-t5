@@ -27,14 +27,15 @@ class Rescuer(AbstAgent):
     def set_rescuers(self, rescuers_lst):
         self.rescuers = rescuers_lst
 
-    def solve_tsp_ga(self, start_pos, victim_coords, victim_ids, pop_size=100, generations=200, mutation_rate=0.2, crossover_rate=0.8):
-        # Algoritmo Genetico para resolver o problema do caixeiro viajante (TSP)
+    def solve_tsp_sa(self, start_pos, victim_coords, victim_ids, initial_temp=100.0, cooling_rate=0.99, min_temp=0.001):
+        # Tempera Simulada para resolver o problema do caixeiro viajante (TSP)
         n = len(victim_coords)
         if n == 0:
             return []
         if n == 1:
             return victim_ids
 
+        # Precomputa matriz de distancias
         dist_matrix = np.zeros((n, n))
         for i in range(n):
             for j in range(n):
@@ -48,18 +49,16 @@ class Rescuer(AbstAgent):
                 dist += dist_matrix[permutation[i]][permutation[i+1]]
             return dist
 
-        population = []
-        
-        # Semente Gulosa (Vizinho mais proximo)
-        greedy_perm = []
+        # Gera solucao inicial usando vizinho mais proximo (Guloso)
+        current_perm = []
         unvisited = set(range(n))
-        curr_idx = None
         best_d = float('inf')
+        curr_idx = None
         for i in range(n):
             if start_dist[i] < best_d:
                 best_d = start_dist[i]
                 curr_idx = i
-        greedy_perm.append(curr_idx)
+        current_perm.append(curr_idx)
         unvisited.remove(curr_idx)
         while unvisited:
             best_d = float('inf')
@@ -68,63 +67,34 @@ class Rescuer(AbstAgent):
                 if dist_matrix[curr_idx][i] < best_d:
                     best_d = dist_matrix[curr_idx][i]
                     next_idx = i
-            greedy_perm.append(next_idx)
+            current_perm.append(next_idx)
             unvisited.remove(next_idx)
             curr_idx = next_idx
-        population.append(greedy_perm)
 
-        for _ in range(pop_size - 1):
-            perm = list(range(n))
-            random.shuffle(perm)
-            population.append(perm)
+        current_dist = calc_distance(current_perm)
+        best_perm = list(current_perm)
+        best_dist = current_dist
 
-        for gen in range(generations):
-            fitnesses = [1.0 / (calc_distance(ind) + 1e-6) for ind in population]
-            best_idx = np.argmax(fitnesses)
-            best_ind = population[best_idx]
-            
-            new_population = [best_ind]
-
-            while len(new_population) < pop_size:
-                def select():
-                    candidates = random.sample(list(zip(population, fitnesses)), 5)
-                    return max(candidates, key=lambda x: x[1])[0]
+        # Loop da Tempera Simulada
+        T = initial_temp
+        while T > min_temp:
+            for _ in range(100):
+                neighbor = list(current_perm)
+                i, j = sorted(random.sample(range(n), 2))
+                neighbor[i:j+1] = reversed(neighbor[i:j+1]) # 2-opt swap
                 
-                p1 = select()
-                p2 = select()
+                neighbor_dist = calc_distance(neighbor)
+                diff = neighbor_dist - current_dist
                 
-                if random.random() < crossover_rate:
-                    c1 = [None] * n
-                    cut1, cut2 = sorted(random.sample(range(n), 2))
-                    c1[cut1:cut2] = p1[cut1:cut2]
-                    
-                    p2_idx = 0
-                    for i in range(n):
-                        if c1[i] is None:
-                            while p2[p2_idx] in c1:
-                                p2_idx += 1
-                            c1[i] = p2[p2_idx]
-                    child = c1
-                else:
-                    child = list(p1)
-                    
-                if random.random() < mutation_rate:
-                    if random.random() < 0.5:
-                        i, j = random.sample(range(n), 2)
-                        child[i], child[j] = child[j], child[i]
-                    else:
-                        i, j = sorted(random.sample(range(n), 2))
-                        child[i:j] = reversed(child[i:j])
-                        
-                new_population.append(child)
-                
-            population = new_population
+                if diff < 0 or random.random() < math.exp(-diff / T):
+                    current_perm = neighbor
+                    current_dist = neighbor_dist
+                    if current_dist < best_dist:
+                        best_dist = current_dist
+                        best_perm = list(current_perm)
+            T *= cooling_rate
 
-        best_fitnesses = [1.0 / (calc_distance(ind) + 1e-6) for ind in population]
-        best_idx = np.argmax(best_fitnesses)
-        best_perm = population[best_idx]
-        
-        return [victim_ids[i] for i in best_perm]
+        return [victim_ids[idx] for idx in best_perm]
 
     def a_star(self, start, goal):
         # Algoritmo de busca A* para encontrar caminhos no grid
@@ -240,8 +210,8 @@ class Rescuer(AbstAgent):
             if not valid_vids:
                 continue
                 
-            # Otimiza trajeto usando Algoritmo Genético
-            sorted_vids = self.solve_tsp_ga((self.plan_x, self.plan_y), cluster_coords, valid_vids)
+            # Otimiza trajeto usando Tempera Simulada
+            sorted_vids = self.solve_tsp_sa((self.plan_x, self.plan_y), cluster_coords, valid_vids)
             
             # Salva na pasta T04
             t04_file = os.path.join(t04_dir, f"cluster_{cluster_id}.txt")
@@ -324,9 +294,9 @@ class Rescuer(AbstAgent):
             if victim_seq != VS.NO_VICTIM and victim_seq in self.victims:
                 coords, vs = self.victims[victim_seq]
                 row.update({
-                    'idade': vs[0], 'fc': vs[1], 'fr': vs[2], 'pas': vs[3], 'spo2': vs[4], 'temp': vs[5],
-                    'pr': vs[6], 'sg': vs[7], 'fx': vs[8], 'queim': vs[9], 'gcs': vs[10], 'avpu': vs[11],
-                    'tri': vs[12], 'sobr': vs[13]
+                    'idade': vs[1], 'fc': vs[2], 'fr': vs[3], 'pas': vs[4], 'spo2': vs[5], 'temp': vs[6],
+                    'pr': vs[7], 'sg': vs[8], 'fx': vs[9], 'queim': vs[10], 'gcs': vs[11], 'avpu': vs[12],
+                    'tri': vs[13], 'sobr': vs[14]
                 })
             rows.append(row)
             
@@ -341,7 +311,7 @@ class Rescuer(AbstAgent):
         X_cluster = []
         for vid in v_ids:
             coords, vs = self.victims[vid]
-            X_cluster.append([coords[0], coords[1], vs[13]]) # x_rel, y_rel, sobr_pred
+            X_cluster.append([coords[0], coords[1], vs[14]]) # x_rel, y_rel, sobr_pred (índice 14)
             
         if X_cluster:
             scaler = MinMaxScaler()
@@ -350,24 +320,56 @@ class Rescuer(AbstAgent):
             db = DBSCAN(eps=0.10, min_samples=5)
             labels = db.fit_predict(X_scaled)
             
-            # Agrupa clusters
+            # Agrupa clusters validos e outliers (ruidos)
             cluster_groups = {}
+            outliers = []
             for i, label in enumerate(labels):
                 vid = v_ids[i]
-                if label != -1: # Exclui ruídos
+                if label != -1:
                     if label not in cluster_groups:
                         cluster_groups[label] = []
                     cluster_groups[label].append(vid)
+                else:
+                    outliers.append(vid)
                     
-            # Prioriza clusters por menor sobrevivência média
+            # Associa outliers ao cluster valido mais proximo espacialmente (2D), se a distancia for aceitavel
+            if cluster_groups:
+                centroids = {}
+                for label, vids in cluster_groups.items():
+                    coords_list = [self.victims[vid][0] for vid in vids]
+                    cx = np.mean([c[0] for c in coords_list])
+                    cy = np.mean([c[1] for c in coords_list])
+                    centroids[label] = (cx, cy)
+                
+                # Limite maximo de distancia em celulas de grid (ex: 20 celulas)
+                MAX_CLUSTER_DIST = 20.0
+                
+                for vid in outliers:
+                    ox, oy = self.victims[vid][0]
+                    best_label = None
+                    min_dist = float('inf')
+                    for label, (cx, cy) in centroids.items():
+                        dist = math.sqrt((cx - ox)**2 + (cy - oy)**2)
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_label = label
+                    
+                    if min_dist <= MAX_CLUSTER_DIST:
+                        cluster_groups[best_label].append(vid)
+            else:
+                # Se nao houver clusters validos, nao fazemos nada (todos os outliers permanecem como ruidos descartados)
+                pass
+                    
+            # Prioriza clusters por menor sobrevivência média (sobr_pred no índice 14)
             cluster_priorities = []
             for label, vids in cluster_groups.items():
-                mean_sobr = np.mean([self.victims[vid][1][13] for vid in vids])
+                mean_sobr = np.mean([self.victims[vid][1][14] for vid in vids])
                 cluster_priorities.append((label, mean_sobr, vids))
                 
             cluster_priorities.sort(key=lambda x: x[1])
             
             prioritized_clusters = []
+            t05_dir = os.path.dirname(self.config_folder)
             t03_dir = os.path.join(t05_dir, "T03")
             os.makedirs(t03_dir, exist_ok=True)
             
@@ -386,8 +388,10 @@ class Rescuer(AbstAgent):
         else:
             prioritized_clusters = []
             
-        # Dispara planejamento de socorro para todos os socorristas
+        # Dispara planejamento de socorro para todos os socorristas compartilhando o mapa e as vitimas unificadas
         for i in range(3):
+            self.rescuers[i].map = self.map
+            self.rescuers[i].victims = self.victims
             self.rescuers[i].do_rescue(self.map, prioritized_clusters)
 
     def deliberate(self) -> bool:
