@@ -1,3 +1,5 @@
 /venv
+/clusters
+map.csv
 
 __pycache__
