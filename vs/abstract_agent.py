@@ -54,6 +54,9 @@ class AbstAgent(ABC):
                 # Split the line into words
                 words = line.split()
 
+                if words is None:
+                    continue
+
                 # Get the keyword and value
                 keyword = words[0]
                 if keyword == "NAME":
