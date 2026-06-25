@@ -166,11 +166,10 @@ class Rescuer(AbstAgent):
         self.set_state(VS.ACTIVE)
         print(f"{self.NAME}: iniciando planejamento de resgate...")
         
-        # Mapeia pastas
+        # Mapeia pasta de clusters ordenados
         t05_dir = os.path.dirname(self.config_folder)
-        t03_dir = os.path.join(t05_dir, "T03")
-        t04_dir = os.path.join(t05_dir, "T04")
-        os.makedirs(t04_dir, exist_ok=True)
+        clusters_dir = os.path.join(t05_dir, "clusters")
+        os.makedirs(clusters_dir, exist_ok=True)
         
         # Define os clusters atribuidos por rodizio
         if self.NAME == "SOC_1":
@@ -190,13 +189,13 @@ class Rescuer(AbstAgent):
         self.plan_rtime = self.TLIM
         
         for cluster_id in my_clusters:
-            cluster_file = os.path.join(t03_dir, f"cluster_{cluster_id}.txt")
-            if not os.path.exists(cluster_file):
-                continue
-                
-            with open(cluster_file, "r") as f:
-                cluster_vids = [int(line.strip()) for line in f if line.strip()]
-                
+            # Obtem as vitimas do cluster a partir do parametro clusters em memoria
+            cluster_vids = None
+            for cid, vids in clusters:
+                if cid == cluster_id:
+                    cluster_vids = vids
+                    break
+                    
             if not cluster_vids:
                 continue
                 
@@ -213,9 +212,9 @@ class Rescuer(AbstAgent):
             # Otimiza trajeto usando Tempera Simulada
             sorted_vids = self.solve_tsp_sa((self.plan_x, self.plan_y), cluster_coords, valid_vids)
             
-            # Salva na pasta T04
-            t04_file = os.path.join(t04_dir, f"cluster_{cluster_id}.txt")
-            with open(t04_file, "w") as f:
+            # Salva na pasta clusters apenas os clusters ordenados
+            cluster_file = os.path.join(clusters_dir, f"cluster_{cluster_id}.txt")
+            with open(cluster_file, "w") as f:
                 for vid in sorted_vids:
                     f.write(f"{vid}\n")
                     
@@ -370,20 +369,19 @@ class Rescuer(AbstAgent):
             
             prioritized_clusters = []
             t05_dir = os.path.dirname(self.config_folder)
-            t03_dir = os.path.join(t05_dir, "T03")
-            os.makedirs(t03_dir, exist_ok=True)
+            clusters_dir = os.path.join(t05_dir, "clusters")
+            os.makedirs(clusters_dir, exist_ok=True)
             
-            # Limpa pasta T03
-            for file in os.listdir(t03_dir):
+            # Limpa a pasta clusters no inicio para tirar arquivos de execucoes anteriores
+            for file in os.listdir(clusters_dir):
                 if file.startswith("cluster_") and file.endswith(".txt"):
-                    os.remove(os.path.join(t03_dir, file))
-                    
+                    try:
+                        os.remove(os.path.join(clusters_dir, file))
+                    except OSError:
+                        pass
+                        
             for priority_id, (label, mean_sobr, vids) in enumerate(cluster_priorities, 1):
                 prioritized_clusters.append((priority_id, vids))
-                cluster_file = os.path.join(t03_dir, f"cluster_{priority_id}.txt")
-                with open(cluster_file, "w") as f:
-                    for vid in sorted(vids):
-                        f.write(f"{vid}\n")
             print(f"{self.NAME}: DBSCAN priorizou {len(prioritized_clusters)} clusters clínicos.")
         else:
             prioritized_clusters = []
