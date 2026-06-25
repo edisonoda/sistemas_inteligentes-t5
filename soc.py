@@ -171,15 +171,8 @@ class Rescuer(AbstAgent):
         clusters_dir = os.path.join(t05_dir, "clusters")
         os.makedirs(clusters_dir, exist_ok=True)
         
-        # Define os clusters atribuidos por rodizio
-        if self.NAME == "SOC_1":
-            my_clusters = [c[0] for i, c in enumerate(clusters) if i % 3 == 0]
-        elif self.NAME == "SOC_2":
-            my_clusters = [c[0] for i, c in enumerate(clusters) if i % 3 == 1]
-        elif self.NAME == "SOC_3":
-            my_clusters = [c[0] for i, c in enumerate(clusters) if i % 3 == 2]
-        else:
-            my_clusters = []
+        # Define os clusters atribuidos diretamente pelo mestre
+        my_clusters = [c[0] for c in clusters]
             
         print(f"{self.NAME}: clusters atribuidos: {my_clusters}")
         
@@ -367,7 +360,38 @@ class Rescuer(AbstAgent):
                 
             cluster_priorities.sort(key=lambda x: x[1])
             
-            prioritized_clusters = []
+            # 1. Calcula centróides, soma de sobrevivência e utilidade para cada cluster
+            cluster_info = []
+            for label, mean_sobr, vids in cluster_priorities:
+                # Calcula centroide
+                coords_list = [self.victims[vid][0] for vid in vids]
+                cx = np.mean([c[0] for c in coords_list])
+                cy = np.mean([c[1] for c in coords_list])
+                
+                # Soma das probabilidades de sobrevivencia (sobr_pred no indice 14)
+                sum_sobr = np.sum([self.victims[vid][1][14] for vid in vids])
+                
+                # Distancia ate a base (0, 0)
+                dist_base = math.sqrt(cx**2 + cy**2)
+                
+                # Utilidade = soma_sobr / (dist_base + 1.0)
+                utility = sum_sobr / (dist_base + 1.0)
+                
+                cluster_info.append({
+                    'vids': vids,
+                    'centroid': (cx, cy),
+                    'sum_sobr': sum_sobr,
+                    'utility': utility
+                })
+                
+            # 2. Ordena os clusters por utilidade decrescente
+            cluster_info.sort(key=lambda x: x['utility'], reverse=True)
+            
+            # 3. Distribuição Gulosa e Inteligente entre os socorristas
+            assignments = { 'SOC_1': [], 'SOC_2': [], 'SOC_3': [] }
+            last_pos = { 'SOC_1': (0, 0), 'SOC_2': (0, 0), 'SOC_3': (0, 0) }
+            accumulated_workload = { 'SOC_1': 0.0, 'SOC_2': 0.0, 'SOC_3': 0.0 }
+            
             t05_dir = os.path.dirname(self.config_folder)
             clusters_dir = os.path.join(t05_dir, "clusters")
             os.makedirs(clusters_dir, exist_ok=True)
@@ -380,17 +404,44 @@ class Rescuer(AbstAgent):
                     except OSError:
                         pass
                         
-            for priority_id, (label, mean_sobr, vids) in enumerate(cluster_priorities, 1):
-                prioritized_clusters.append((priority_id, vids))
-            print(f"{self.NAME}: DBSCAN priorizou {len(prioritized_clusters)} clusters clínicos.")
+            for priority_id, info in enumerate(cluster_info, 1):
+                vids = info['vids']
+                cx, cy = info['centroid']
+                num_victims = len(vids)
+                
+                # Encontra o socorrista com menor incremento estimado de carga de trabalho
+                best_agent = None
+                min_cost = float('inf')
+                for agent in ['SOC_1', 'SOC_2', 'SOC_3']:
+                    lx, ly = last_pos[agent]
+                    dist_to_cluster = math.sqrt((lx - cx)**2 + (ly - cy)**2)
+                    estimated_cost = accumulated_workload[agent] + dist_to_cluster + (num_victims * self.COST_FIRST_AID)
+                    
+                    if estimated_cost < min_cost:
+                        min_cost = estimated_cost
+                        best_agent = agent
+                
+                # Atualiza carga de trabalho acumulada e ultima posicao
+                lx, ly = last_pos[best_agent]
+                dist_to_cluster = math.sqrt((lx - cx)**2 + (ly - cy)**2)
+                accumulated_workload[best_agent] += dist_to_cluster + (num_victims * self.COST_FIRST_AID)
+                last_pos[best_agent] = (cx, cy)
+                
+                # Atribui o cluster
+                assignments[best_agent].append((priority_id, vids))
+                
+            print(f"{self.NAME}: DBSCAN priorizou {len(cluster_info)} clusters clínicos.")
+            for agent in ['SOC_1', 'SOC_2', 'SOC_3']:
+                print(f"{self.NAME}: clusters delegados para {agent} -> {[c[0] for c in assignments[agent]]}")
         else:
-            prioritized_clusters = []
+            assignments = { 'SOC_1': [], 'SOC_2': [], 'SOC_3': [] }
             
         # Dispara planejamento de socorro para todos os socorristas compartilhando o mapa e as vitimas unificadas
         for i in range(3):
             self.rescuers[i].map = self.map
             self.rescuers[i].victims = self.victims
-            self.rescuers[i].do_rescue(self.map, prioritized_clusters)
+            agent_name = self.rescuers[i].NAME
+            self.rescuers[i].do_rescue(self.map, assignments.get(agent_name, []))
 
     def deliberate(self) -> bool:
         if self.plan == []:
