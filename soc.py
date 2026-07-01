@@ -388,31 +388,23 @@ class Rescuer(AbstAgent):
                 if outliers:
                     cluster_groups['outliers'] = outliers.copy()
                     
-            # Prioriza clusters por menor sobrevivência média (sobr_pred no índice 14)
-            cluster_priorities = []
-            for label, vids in cluster_groups.items():
-                mean_sobr = np.mean([self.victims[vid][1][14] for vid in vids])
-                cluster_priorities.append((label, mean_sobr, vids))
-                
-            cluster_priorities.sort(key=lambda x: x[1])
-            
-            # 1. Calcula centróides, soma de sobrevivência e utilidade para cada cluster
+            # Calcula centróides, sobrevivência média e utilidade para cada cluster
             cluster_info = []
-            for label, mean_sobr, vids in cluster_priorities:
-                # Calcula centroide
+            for label, vids in cluster_groups.items():
                 coords_list = [self.victims[vid][0] for vid in vids]
                 cx = np.mean([c[0] for c in coords_list])
                 cy = np.mean([c[1] for c in coords_list])
                 
-                # Sobrevivencia media do cluster (sobr_pred no indice 14) e quantidade de vitimas
+                # Sobrevivência média do cluster (sobr_pred no índice 14) e quantidade de vítimas
                 mean_sobr = np.mean([self.victims[vid][1][14] for vid in vids])
                 num_victims = len(vids)
                 
-                # Distancia ate a base (0, 0)
+                # Distância até a base (0, 0)
                 dist_base = math.sqrt(cx**2 + cy**2)
                 
-                # Utilidade = (num_victims * mean_sobr) / (dist_base + 1.0)
-                utility = (num_victims * mean_sobr) / (dist_base + 1.0)
+                # Utilidade inversa: prioriza menor sobrevivência (vítimas mais críticas)
+                # Adiciona-se 0.0001 no denominador para evitar divisão por zero
+                utility = num_victims / (max(0.0001, mean_sobr) * (dist_base + 1.0))
                 
                 cluster_info.append({
                     'vids': vids,
@@ -421,13 +413,13 @@ class Rescuer(AbstAgent):
                     'utility': utility
                 })
                 
-            # 2. Ordena os clusters por utilidade decrescente
+            # Ordena os clusters por utilidade decrescente (maior utilidade = menor sobrevivência)
             cluster_info.sort(key=lambda x: x['utility'], reverse=True)
             
             # Gera o gráfico de utilidades
             self.plot_utilities(cluster_info)
             
-            # 3. Distribuição Gulosa e Inteligente entre os socorristas
+            # Distribuição Gulosa e Inteligente entre os socorristas
             assignments = { 'SOC_1': [], 'SOC_2': [], 'SOC_3': [] }
             last_pos = { 'SOC_1': (0, 0), 'SOC_2': (0, 0), 'SOC_3': (0, 0) }
             accumulated_workload = { 'SOC_1': 0.0, 'SOC_2': 0.0, 'SOC_3': 0.0 }

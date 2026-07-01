@@ -44,24 +44,19 @@ class Explorer(AbstAgent):
         self.visited = set()
         self.visited.add((self.x, self.y))
 
-        # Define o setor angular do agente baseado no número do nome do agente (1, 2 ou 3)
         try:
             num = int(self.NAME.split("_")[-1])
         except ValueError:
             num = 1
             
-        # EXP_1: [-180, -60[
-        # EXP_2: [-60, 60[
-        # EXP_3: [60, 180]
         if num == 1:
-            self.min_angle = -180.0
-            self.max_angle = -60.0
+            pivot = 0  # Começa pelo Norte (Up)
         elif num == 2:
-            self.min_angle = -60.0
-            self.max_angle = 60.0
+            pivot = 3  # Começa pelo Leste (Bottom Right)
         else:
-            self.min_angle = 60.0
-            self.max_angle = 180.0
+            pivot = 5  # Começa pelo Oeste (Bottom Left)
+            
+        self.dir_priority = [(pivot + i) % 8 for i in range(8)]
 
         # Carregar modelos preditivos treinados
         t05_dir = os.path.dirname(os.path.dirname(config_file))
@@ -93,17 +88,9 @@ class Explorer(AbstAgent):
             curr_x, curr_y = nx, ny
         return cost
 
-    def is_in_sector(self, coord):
-        x, y = coord
-        if x == 0 and y == 0:
-            return True
-        angle = math.degrees(math.atan2(y, x))
-        return self.min_angle <= angle < self.max_angle
-
     def get_next_position(self):
         """ Online DFS and local spiral search to get the next position.
         """
-        # DFS Online: tenta encontrar o primeiro vizinho valido nao visitado localmente
         obstacles = self.check_walls_and_lim()
         valid_moves = []
 
@@ -118,32 +105,28 @@ class Explorer(AbstAgent):
         if not valid_moves:
             return None
 
-        # Filtra os movimentos que pertencem ao setor angular deste agente
-        sector_moves = [move for move in valid_moves if self.is_in_sector((move[3], move[4]))]
-        chosen_moves = sector_moves if sector_moves else valid_moves
-
         # 2. Se estiver em modo espiral, tenta priorizar vizinhos próximos ao centro
         if self.spiral_mode:
             cx, cy = self.spiral_center
             cluster_moves = []
-            for direction, dx, dy, nx, ny in chosen_moves:
+            for direction, dx, dy, nx, ny in valid_moves:
                 dist = max(abs(nx - cx), abs(ny - cy)) # Distância Chebyshev
                 if dist <= self.spiral_radius_limit:
                     cluster_moves.append((direction, dx, dy, nx, ny, dist))
 
             if cluster_moves:
                 # Ordena pelo vizinho mais próximo do centro (crescente).
-                # Se empatar na distância, usa a ordem horária original (direction)
-                cluster_moves.sort(key=lambda item: (item[5], item[0]))
+                # Se empatar na distância, usa a prioridade rotacionada do agente
+                cluster_moves.sort(key=lambda item: (item[5], self.dir_priority.index(item[0])))
                 best_move = cluster_moves[0]
                 return best_move[1], best_move[2]
             else:
                 # Sem vizinhos livres dentro do raio do cluster: desativa modo espiral
                 self.spiral_mode = False
 
-        # 3. Fallback para DFS linear padrão (ordem horária original)
-        chosen_moves.sort(key=lambda item: item[0])
-        return chosen_moves[0][1], chosen_moves[0][2]
+        # 3. DFS linear padrão usando a ordem de prioridade rotacionada
+        valid_moves.sort(key=lambda item: self.dir_priority.index(item[0]))
+        return valid_moves[0][1], valid_moves[0][2]
 
     def explore(self):
         next_move = self.get_next_position()
