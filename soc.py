@@ -189,13 +189,10 @@ class Rescuer(AbstAgent):
             
         print(f"{self.NAME}: clusters atribuidos: {my_clusters}")
         
-        self.plan = []
-        self.plan_x = 0
-        self.plan_y = 0
-        self.plan_rtime = self.TLIM
-        
+        # 1. Primeiro, ordena e salva todos os clusters atribuídos ao agente
+        sorted_clusters_data = []
+        temp_x, temp_y = 0, 0 # Simula a posição de início
         for cluster_id in my_clusters:
-            # Obtem as vitimas do cluster a partir do parametro clusters em memoria
             cluster_vids = None
             for cid, vids in clusters:
                 if cid == cluster_id:
@@ -215,15 +212,30 @@ class Rescuer(AbstAgent):
             if not valid_vids:
                 continue
                 
-            # Otimiza trajeto usando Tempera Simulada
-            sorted_vids = self.solve_tsp_sa((self.plan_x, self.plan_y), cluster_coords, valid_vids)
+            # Otimiza trajeto usando Tempera Simulada a partir da última posição simulada
+            sorted_vids = self.solve_tsp_sa((temp_x, temp_y), cluster_coords, valid_vids)
             
-            # Salva na pasta clusters apenas os clusters ordenados
+            # Salva na pasta clusters todos os clusters ordenados atribuídos ao agente
             cluster_file = os.path.join(clusters_dir, f"cluster_{cluster_id}.txt")
             with open(cluster_file, "w") as f:
                 for vid in sorted_vids:
                     f.write(f"{vid}\n")
-                    
+            
+            # Guarda os dados ordenados para a etapa de planejamento
+            sorted_clusters_data.append((cluster_id, sorted_vids))
+            
+            # Atualiza a posição simulada para o próximo cluster
+            if sorted_vids:
+                last_vic = sorted_vids[-1]
+                temp_x, temp_y = self.victims[last_vic][0]
+                
+        # 2. Agora planeja a execução do resgate respeitando o limite de bateria
+        self.plan = []
+        self.plan_x = 0
+        self.plan_y = 0
+        self.plan_rtime = self.TLIM
+        
+        for cluster_id, sorted_vids in sorted_clusters_data:
             time_out = False
             for vid in sorted_vids:
                 vic_pos = self.victims[vid][0]
