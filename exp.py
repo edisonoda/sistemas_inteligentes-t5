@@ -1,3 +1,9 @@
+# EXPLORER AGENT
+# @Author: Tacla, UTFPR
+#
+### It walks randomly in the environment looking for victims. When half of the
+### exploration has gone, the explorer goes back to the base.
+
 import os
 import random
 import pandas as pd
@@ -21,6 +27,11 @@ class Explorer(AbstAgent):
     visited_global = set()
 
     def __init__(self, env, config_file, resc):
+        """ Construtor do agente random on-line
+        @param env: a reference to the environment 
+        @param config_file: the absolute path to the explorer's config file
+        @param resc: a reference to the rescuer agent to invoke when exploration finishes
+        """
         super().__init__(env, config_file)
         self.walk_stack = Stack()
         self.set_state(VS.ACTIVE)
@@ -42,6 +53,11 @@ class Explorer(AbstAgent):
         # Custo do pior caso de um passo (andar na diagonal com maior dificuldade 3, ler vitais e voltar)
         self.one_more_step = self.COST_DIAG * 2 * 3 + self.COST_READ
 
+        # Configurações para busca local em espiral/cluster
+        self.spiral_mode = False
+        self.spiral_center = None
+        self.spiral_radius_limit = 3
+
     def get_backtrack_cost(self):
         # Calcula o custo exato para voltar para a base desempilhando walk_stack
         cost = 0.0
@@ -60,16 +76,45 @@ class Explorer(AbstAgent):
         return cost
 
     def get_next_position(self):
+        """ Online DFS and local spiral search to get the next position.
+        """
         # DFS Online: tenta encontrar o primeiro vizinho valido nao visitado globalmente
         obstacles = self.check_walls_and_lim()
-        # Testa vizinhos na ordem horaria (0 a 7)
+        valid_moves = []
+
+        # 1. Filtra movimentos válidos e não visitados
         for direction in range(8):
             if obstacles[direction] == VS.CLEAR:
                 dx, dy = Explorer.AC_INCR[direction]
                 nx, ny = self.x + dx, self.y + dy
                 if (nx, ny) not in Explorer.visited_global:
-                    return dx, dy
-        return None
+                    valid_moves.append((direction, dx, dy, nx, ny))
+
+        if not valid_moves:
+            return None
+
+        # 2. Se estiver em modo espiral, tenta priorizar vizinhos próximos ao centro
+        if self.spiral_mode:
+            cx, cy = self.spiral_center
+            cluster_moves = []
+            for direction, dx, dy, nx, ny in valid_moves:
+                dist = max(abs(nx - cx), abs(ny - cy)) # Distância Chebyshev
+                if dist <= self.spiral_radius_limit:
+                    cluster_moves.append((direction, dx, dy, nx, ny, dist))
+
+            if cluster_moves:
+                # Ordena pelo vizinho mais próximo do centro (crescente).
+                # Se empatar na distância, usa a ordem horária original (direction)
+                cluster_moves.sort(key=lambda item: (item[5], item[0]))
+                best_move = cluster_moves[0]
+                return best_move[1], best_move[2]
+            else:
+                # Sem vizinhos livres dentro do raio do cluster: desativa modo espiral
+                self.spiral_mode = False
+
+        # 3. Fallback para DFS linear padrão (ordem horária original)
+        valid_moves.sort(key=lambda item: item[0])
+        return valid_moves[0][1], valid_moves[0][2]
 
     def explore(self):
         next_move = self.get_next_position()
@@ -102,6 +147,8 @@ class Explorer(AbstAgent):
                     
                     seq = self.check_for_victim()
                     if seq != VS.NO_VICTIM:
+                        self.spiral_mode = True
+                        self.spiral_center = (self.x, self.y)
                         # Le os sinais vitais (retorna 12 elementos)
                         vs = self.read_vital_signals()
                         if vs and vs != VS.TIME_EXCEEDED:
@@ -128,6 +175,8 @@ class Explorer(AbstAgent):
         self.come_back()
 
     def come_back(self):
+        """ Procedure to return to the base: pops the walk_stack to follow
+        the exploration path in the opposite direction """
         if self.walk_stack.is_empty():
             return
             
@@ -143,6 +192,9 @@ class Explorer(AbstAgent):
             self.y += dy
         
     def deliberate(self) -> bool:
+        """  The simulator calls this method at each cycle. 
+        Must be implemented in every agent. The agent chooses the next action.
+        """
         # Se a pilha de caminhos estiver vazia e nao houver vizinhos a explorar, terminou
         # ou se a bateria nao for suficiente para dar um passo de exploracao e voltar com folga
         # (usamos a estimativa do backtrack + worst case de passo e leitura + margem de retorno seguro)

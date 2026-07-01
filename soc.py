@@ -1,3 +1,9 @@
+##  RESCUER AGENT
+### @Author: Tacla (UTFPR)
+### Demo of use of VictimSim
+### Not a complete version of DFS; it comes back prematuraly
+### to the base when it enters into a dead end position
+
 import os
 import pandas as pd
 import math
@@ -10,6 +16,9 @@ from map import Map
 
 class Rescuer(AbstAgent):
     def __init__(self, env, config_file):
+        """ 
+        @param env: a reference to an instance of the environment class
+        @param config_file: the absolute path to the agent's config file"""
         super().__init__(env, config_file)
         self.map = Map()
         self.victims = {}
@@ -25,6 +34,7 @@ class Rescuer(AbstAgent):
         self.set_state(VS.IDLE)
 
     def set_rescuers(self, rescuers_lst):
+        """ each rescuer has the reference to the others"""
         self.rescuers = rescuers_lst
 
     def solve_tsp_sa(self, start_pos, victim_coords, victim_ids, initial_temp=100.0, cooling_rate=0.99, min_temp=0.001):
@@ -163,6 +173,9 @@ class Rescuer(AbstAgent):
         return cost
         
     def do_rescue(self, map, clusters):
+        """ O agente socorrista executa a estratégia de salvamento tendo
+            o mapa e os clusters que foram atribuídos a ele.
+        """
         self.set_state(VS.ACTIVE)
         print(f"{self.NAME}: iniciando planejamento de resgate...")
         
@@ -255,6 +268,9 @@ class Rescuer(AbstAgent):
         print(f"{self.NAME}: Plano gerado com sucesso! {len(self.plan)} acoes.")
 
     def merge_maps(self, exp_name, map, victims):
+        """ The explorer named exp_name sends the map containing the walls and
+        victims' location. The rescuer becomes ACTIVE. From now,
+        the deliberate method is called by the environment"""
         # Mesclar mapas locais
         for coord, cell_data in map.map_data.items():
             if not self.map.in_map(coord):
@@ -519,6 +535,11 @@ class Rescuer(AbstAgent):
             print(f"{self.NAME}: Erro ao gerar gráfico de utilidades: {e}")
 
     def deliberate(self) -> bool:
+        """ This is the choice of the next action. The simulator calls this
+        method at each reasonning cycle if the agent is ACTIVE.
+        Must be implemented in every agent
+        @return True: there's one or more actions to do
+        @return False: there's no more action to do """
         if self.plan == []:
            print(f"{self.NAME} planeamento concluido.")
            return False

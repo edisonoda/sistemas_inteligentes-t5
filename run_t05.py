@@ -2,8 +2,8 @@ import os
 import subprocess
 import re
 
-WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else r"c:\Users\crisn\Desktop\-\si\tarefa_si3"
-T05_DIR = os.path.join(WORKSPACE_DIR, "T05_final")
+WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
+T05_DIR = WORKSPACE_DIR
 CFG_DIR = os.path.join(T05_DIR, "cfg")
 
 EXP_FILES = ["exp_1.txt", "exp_2.txt", "exp_3.txt"]
