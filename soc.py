@@ -361,8 +361,9 @@ class Rescuer(AbstAgent):
                     cy = np.mean([c[1] for c in coords_list])
                     centroids[label] = (cx, cy)
                 
-                # Limite maximo de distancia em celulas de grid (ex: 20 celulas)
+                # Limite maximo de distancia em celulas de grid (ex: 30 celulas)
                 MAX_CLUSTER_DIST = 30.0
+                assigned_outliers = set()
                 
                 for vid in outliers:
                     ox, oy = self.victims[vid][0]
@@ -376,9 +377,16 @@ class Rescuer(AbstAgent):
                     
                     if min_dist <= MAX_CLUSTER_DIST:
                         cluster_groups[best_label].append(vid)
+                        assigned_outliers.add(vid)
+                        
+                # Agrupa outliers isolados restantes em um cluster próprio de ruidos
+                remaining_outliers = [vid for vid in outliers if vid not in assigned_outliers]
+                if remaining_outliers:
+                    cluster_groups['outliers'] = remaining_outliers
             else:
-                # Se nao houver clusters validos, nao fazemos nada (todos os outliers permanecem como ruidos descartados)
-                pass
+                # Se nao houver clusters validos, agrupa todos os outliers em um unico cluster
+                if outliers:
+                    cluster_groups['outliers'] = outliers.copy()
                     
             # Prioriza clusters por menor sobrevivência média (sobr_pred no índice 14)
             cluster_priorities = []

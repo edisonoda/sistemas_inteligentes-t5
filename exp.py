@@ -5,6 +5,7 @@
 ### exploration has gone, the explorer goes back to the base.
 
 import os
+import math
 import random
 import pandas as pd
 import joblib
@@ -23,9 +24,6 @@ class Stack:
         return len(self.items) == 0
 
 class Explorer(AbstAgent):
-    # Coordenacao Global por compartilhamento de estado em classe
-    visited_global = set()
-
     def __init__(self, env, config_file, resc):
         """ Construtor do agente random on-line
         @param env: a reference to the environment 
@@ -41,9 +39,29 @@ class Explorer(AbstAgent):
         self.map = Map()
         self.victims = {}
 
-        # Registra a base no mapa e no set global
+        # Registra a base no mapa e no set local de visitados
         self.map.add((self.x, self.y), 1, VS.NO_VICTIM, self.check_walls_and_lim())
-        Explorer.visited_global.add((self.x, self.y))
+        self.visited = set()
+        self.visited.add((self.x, self.y))
+
+        # Define o setor angular do agente baseado no número do nome do agente (1, 2 ou 3)
+        try:
+            num = int(self.NAME.split("_")[-1])
+        except ValueError:
+            num = 1
+            
+        # EXP_1: [-180, -60[
+        # EXP_2: [-60, 60[
+        # EXP_3: [60, 180]
+        if num == 1:
+            self.min_angle = -180.0
+            self.max_angle = -60.0
+        elif num == 2:
+            self.min_angle = -60.0
+            self.max_angle = 60.0
+        else:
+            self.min_angle = 60.0
+            self.max_angle = 180.0
 
         # Carregar modelos preditivos treinados
         t05_dir = os.path.dirname(os.path.dirname(config_file))
@@ -75,29 +93,40 @@ class Explorer(AbstAgent):
             curr_x, curr_y = nx, ny
         return cost
 
+    def is_in_sector(self, coord):
+        x, y = coord
+        if x == 0 and y == 0:
+            return True
+        angle = math.degrees(math.atan2(y, x))
+        return self.min_angle <= angle < self.max_angle
+
     def get_next_position(self):
         """ Online DFS and local spiral search to get the next position.
         """
-        # DFS Online: tenta encontrar o primeiro vizinho valido nao visitado globalmente
+        # DFS Online: tenta encontrar o primeiro vizinho valido nao visitado localmente
         obstacles = self.check_walls_and_lim()
         valid_moves = []
 
-        # 1. Filtra movimentos válidos e não visitados
+        # 1. Filtra movimentos válidos e não visitados localmente
         for direction in range(8):
             if obstacles[direction] == VS.CLEAR:
                 dx, dy = Explorer.AC_INCR[direction]
                 nx, ny = self.x + dx, self.y + dy
-                if (nx, ny) not in Explorer.visited_global:
+                if (nx, ny) not in self.visited:
                     valid_moves.append((direction, dx, dy, nx, ny))
 
         if not valid_moves:
             return None
 
+        # Filtra os movimentos que pertencem ao setor angular deste agente
+        sector_moves = [move for move in valid_moves if self.is_in_sector((move[3], move[4]))]
+        chosen_moves = sector_moves if sector_moves else valid_moves
+
         # 2. Se estiver em modo espiral, tenta priorizar vizinhos próximos ao centro
         if self.spiral_mode:
             cx, cy = self.spiral_center
             cluster_moves = []
-            for direction, dx, dy, nx, ny in valid_moves:
+            for direction, dx, dy, nx, ny in chosen_moves:
                 dist = max(abs(nx - cx), abs(ny - cy)) # Distância Chebyshev
                 if dist <= self.spiral_radius_limit:
                     cluster_moves.append((direction, dx, dy, nx, ny, dist))
@@ -113,8 +142,8 @@ class Explorer(AbstAgent):
                 self.spiral_mode = False
 
         # 3. Fallback para DFS linear padrão (ordem horária original)
-        valid_moves.sort(key=lambda item: item[0])
-        return valid_moves[0][1], valid_moves[0][2]
+        chosen_moves.sort(key=lambda item: item[0])
+        return chosen_moves[0][1], chosen_moves[0][2]
 
     def explore(self):
         next_move = self.get_next_position()
@@ -130,8 +159,8 @@ class Explorer(AbstAgent):
             
             # Se a bateria restante apos a acao e leitura for suficiente para voltar de (nx, ny)
             if self.get_rtime() - (worst_action_cost + self.COST_READ + backtrack_cost + worst_action_cost) >= 0:
-                # Marca como visitado globalmente
-                Explorer.visited_global.add((nx, ny))
+                # Marca como visitado localmente
+                self.visited.add((nx, ny))
                 
                 rtime_bef = self.get_rtime()
                 result = self.walk(dx, dy)
@@ -209,7 +238,7 @@ class Explorer(AbstAgent):
             for direction in range(8):
                 if obstacles[direction] == VS.CLEAR:
                     dx, dy = Explorer.AC_INCR[direction]
-                    if (self.x + dx, self.y + dy) not in Explorer.visited_global:
+                    if (self.x + dx, self.y + dy) not in self.visited:
                         has_unvisited_neighbor = True
                         break
                         
